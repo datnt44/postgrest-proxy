@@ -52,6 +52,18 @@ app.get("/api/lookups/noi-tt", async (req, res) => {
   res.json(values);
 });
 
+app.get("/api/chuan_bi_nhap_moi", async (req, res) => {
+  res.json({
+    ok: true,
+    endpoints: {
+      dan_toc: "/api/lookups/dan-toc",
+      quoc_tich: "/api/lookups/quoc-tich",
+      noi_tt: "/api/lookups/noi-tt",
+      submit: "/api/submit"
+    }
+  });
+});
+
 // Submit (ẩn endpoint insert thật)
 app.post("/api/submit", async (req, res) => {
   const r = await pgFetch(INSERT_ENDPOINT, {
@@ -67,3 +79,4 @@ app.get("/", (req, res) => res.send("OK"));
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log("Proxy running on", port));
+
