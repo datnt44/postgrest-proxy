@@ -30,9 +30,8 @@ function checkConfig(req, res, next) {
   next();
 }
 
-async function pgFetch(path) {
-  const cleanPath = path.replace(/^\/+/, "");
-  const url = `${POSTGREST_URL}/${cleanPath}`;
+async function pgGet(tableName, limit = 5000) {
+  const url = `${POSTGREST_URL}/${encodeURI(tableName)}?select=*&limit=${limit}`;
 
   try {
     const response = await fetch(url, {
@@ -45,7 +44,6 @@ async function pgFetch(path) {
     const text = await response.text();
 
     let data = null;
-
     try {
       data = text ? JSON.parse(text) : null;
     } catch {
@@ -55,17 +53,17 @@ async function pgFetch(path) {
     return {
       ok: response.ok,
       status: response.status,
+      url,
       text,
-      data,
-      url
+      data
     };
   } catch (error) {
     return {
       ok: false,
       status: 500,
+      url,
       text: error.message,
-      data: null,
-      url
+      data: null
     };
   }
 }
@@ -74,7 +72,7 @@ app.get("/", (req, res) => {
   res.json({
     ok: true,
     message: "Express proxy is running - read only",
-    postgrest_configured: Boolean(POSTGREST_URL),
+    postgrest_url_configured: Boolean(POSTGREST_URL),
     endpoints: {
       a2: "/api/a2",
       lenh_quyetdinh: "/api/lenh-quyetdinh",
@@ -83,9 +81,8 @@ app.get("/", (req, res) => {
   });
 });
 
-// Debug: kiểm tra Express đang gọi URL nào
 app.get("/api/debug/a2", checkConfig, async (req, res) => {
-  const r = await pgFetch("_A2?select=*&limit=5");
+  const r = await pgGet("_A2", 5);
 
   res.json({
     ok: r.ok,
@@ -96,9 +93,8 @@ app.get("/api/debug/a2", checkConfig, async (req, res) => {
   });
 });
 
-// Lấy dữ liệu bảng _A2
 app.get("/api/a2", checkConfig, async (req, res) => {
-  const r = await pgFetch("_A2?select=*&limit=5000");
+  const r = await pgGet("_A2", 5000);
 
   if (!r.ok) {
     return res.status(r.status).json({
@@ -119,9 +115,8 @@ app.get("/api/a2", checkConfig, async (req, res) => {
   });
 });
 
-// Lấy dữ liệu bảng lenh_quyetdinh
 app.get("/api/lenh-quyetdinh", checkConfig, async (req, res) => {
-  const r = await pgFetch("lenh_quyetdinh?select=*&limit=5000");
+  const r = await pgGet("lenh_quyetdinh", 5000);
 
   if (!r.ok) {
     return res.status(r.status).json({
