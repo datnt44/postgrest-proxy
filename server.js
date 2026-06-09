@@ -7,7 +7,6 @@ app.use(express.json({ limit: "1mb" }));
 const POSTGREST_URL = (process.env.POSTGREST_URL || "").replace(/\/+$/, "");
 const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || "*";
 
-// CORS - chỉ cho phép đọc dữ liệu
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", ALLOW_ORIGIN);
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -20,7 +19,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Kiểm tra cấu hình Railway
 function checkConfig(req, res, next) {
   if (!POSTGREST_URL) {
     return res.status(500).json({
@@ -32,9 +30,9 @@ function checkConfig(req, res, next) {
   next();
 }
 
-// Hàm gọi PostgREST
 async function pgFetch(path) {
-  const url = `${POSTGREST_URL}/${path.replace(/^\/+/, "")}`;
+  const cleanPath = path.replace(/^\/+/, "");
+  const url = `${POSTGREST_URL}/${cleanPath}`;
 
   try {
     const response = await fetch(url, {
@@ -47,6 +45,7 @@ async function pgFetch(path) {
     const text = await response.text();
 
     let data = null;
+
     try {
       data = text ? JSON.parse(text) : null;
     } catch {
@@ -57,27 +56,43 @@ async function pgFetch(path) {
       ok: response.ok,
       status: response.status,
       text,
-      data
+      data,
+      url
     };
   } catch (error) {
     return {
       ok: false,
       status: 500,
       text: error.message,
-      data: null
+      data: null,
+      url
     };
   }
 }
 
-// Trang kiểm tra server
 app.get("/", (req, res) => {
   res.json({
     ok: true,
     message: "Express proxy is running - read only",
+    postgrest_configured: Boolean(POSTGREST_URL),
     endpoints: {
       a2: "/api/a2",
-      lenh_quyetdinh: "/api/lenh-quyetdinh"
+      lenh_quyetdinh: "/api/lenh-quyetdinh",
+      debug_a2: "/api/debug/a2"
     }
+  });
+});
+
+// Debug: kiểm tra Express đang gọi URL nào
+app.get("/api/debug/a2", checkConfig, async (req, res) => {
+  const r = await pgFetch("_A2?select=*&limit=5");
+
+  res.json({
+    ok: r.ok,
+    status: r.status,
+    called_url: r.url,
+    raw_text: r.text,
+    data: r.data
   });
 });
 
@@ -89,6 +104,7 @@ app.get("/api/a2", checkConfig, async (req, res) => {
     return res.status(r.status).json({
       ok: false,
       table: "_A2",
+      called_url: r.url,
       error: r.text
     });
   }
@@ -111,6 +127,7 @@ app.get("/api/lenh-quyetdinh", checkConfig, async (req, res) => {
     return res.status(r.status).json({
       ok: false,
       table: "lenh_quyetdinh",
+      called_url: r.url,
       error: r.text
     });
   }
