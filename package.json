@@ -1,8 +1,15 @@
 {
-  "name": "postgrest-proxy",
+  "name": "express-postgrest-readonly-proxy",
   "version": "1.0.0",
-  "main": "server.js",
-  "type": "commonjs",
-  "scripts": { "start": "node server.js" },
-  "dependencies": { "express": "^4.19.2" }
+  "description": "Read-only Express proxy for PostgREST and PostgreSQL",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
 }
