@@ -1,18 +1,18 @@
 {
-"name": "a2-viewer-api",
-"version": "1.0.0",
-"description": "Node.js API trung gian để lấy dữ liệu bảng _A2 từ PostgREST Railway",
-"main": "server.js",
-"scripts": {
-"start": "node server.js"
-},
-"engines": {
-"node": ">=18"
-},
-"dependencies": {
-"cors": "^2.8.5",
-"express": "^4.18.3",
-"express-rate-limit": "^7.1.5",
-"helmet": "^7.1.0"
-}
+  "name": "a2-viewer-api",
+  "version": "1.0.0",
+  "description": "Node.js API trung gian lấy dữ liệu bảng _A2 từ PostgREST",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.3",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0"
+  }
 }
