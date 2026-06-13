@@ -1,34 +1,80 @@
 const express = require("express");
-const path = require("path");
 const helmet = require("helmet");
+const cors = require("cors");
 const rateLimit = require("express-rate-limit");
 
 const app = express();
 
 const PORT = process.env.PORT || 3000;
-const POSTGREST_URL = (process.env.POSTGREST_URL || "").replace(/\/+$/, "");
+
+const POSTGREST_URL = (process.env.POSTGREST_URL || "").replace(//+$/, "");
+const TABLE_A2 = process.env.TABLE_A2 || "_A2";
+
+// Domain Netlify của bạn.
+// Ví dụ: https://ten-web-cua-ban.netlify.app
+// Có thể nhập nhiều domain, cách nhau bằng dấu phẩy.
+const FRONTEND_URL = process.env.FRONTEND_URL || "";
 
 // ==============================
-// SECURITY BASIC
+// BASIC SECURITY
 // ==============================
 app.use(
-  helmet({
-    contentSecurityPolicy: false
-  })
+helmet({
+contentSecurityPolicy: false
+})
 );
 
 app.use(express.json({ limit: "100kb" }));
 
-// Giới hạn request API
-const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 120,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    ok: false,
-    error: "Too many requests. Please try again later."
+// ==============================
+// CORS FOR NETLIFY
+// ==============================
+const allowedOrigins = FRONTEND_URL
+.split(",")
+.map((item) => item.trim())
+.filter(Boolean);
+
+app.use(
+cors({
+origin: function (origin, callback) {
+// Cho phép request từ Postman/curl hoặc server-to-server
+if (!origin) {
+return callback(null, true);
+}
+
+```
+  // Nếu chưa cấu hình FRONTEND_URL thì tạm cho phép tất cả.
+  // Khi chạy thật nên cấu hình FRONTEND_URL trên Railway.
+  if (allowedOrigins.length === 0) {
+    return callback(null, true);
   }
+
+  if (allowedOrigins.includes(origin)) {
+    return callback(null, true);
+  }
+
+  return callback(new Error("Not allowed by CORS: " + origin));
+},
+methods: ["GET", "OPTIONS"],
+allowedHeaders: ["Content-Type", "Authorization"],
+credentials: false
+```
+
+})
+);
+
+// ==============================
+// RATE LIMIT
+// ==============================
+const apiLimiter = rateLimit({
+windowMs: 60 * 1000,
+max: 120,
+standardHeaders: true,
+legacyHeaders: false,
+message: {
+ok: false,
+error: "Too many requests. Please try again later."
+}
 });
 
 app.use("/api", apiLimiter);
@@ -37,258 +83,227 @@ app.use("/api", apiLimiter);
 // CONFIG CHECK
 // ==============================
 function hasPostgrestUrl() {
-  return Boolean(POSTGREST_URL);
+return Boolean(POSTGREST_URL);
 }
 
 function requirePostgrestUrl(req, res, next) {
-  if (!hasPostgrestUrl()) {
-    return res.status(500).json({
-      ok: false,
-      error: "Missing POSTGREST_URL"
-    });
-  }
+if (!hasPostgrestUrl()) {
+return res.status(500).json({
+ok: false,
+error: "Missing POSTGREST_URL",
+hint: "Set POSTGREST_URL in Railway Variables. It must point to your PostgREST service URL."
+});
+}
 
-  next();
+next();
 }
 
 // ==============================
-// POSTGREST FETCH FUNCTION
+// FETCH FROM POSTGREST
 // ==============================
-async function fetchFromPostgrest(endpoint, limit = 5000) {
-  const url = `${POSTGREST_URL}/${endpoint}?select=*&limit=${limit}`;
+async function fetchFromPostgrest(tableName, limit = 5000) {
+const safeTable = encodeURIComponent(tableName);
+const url = `${POSTGREST_URL}/${safeTable}?select=*&limit=${limit}`;
 
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json"
-      }
-    });
+try {
+const response = await fetch(url, {
+method: "GET",
+headers: {
+Accept: "application/json"
+}
+});
 
-    const text = await response.text();
+```
+const text = await response.text();
 
-    let data = null;
-    let isJson = true;
+let data = null;
+let isJson = true;
 
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      isJson = false;
-    }
+try {
+  data = text ? JSON.parse(text) : null;
+} catch {
+  isJson = false;
+}
 
-    return {
-      ok: response.ok,
-      status: response.status,
-      url,
-      text,
-      data,
-      isJson
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      status: 500,
-      url,
-      text: error.message,
-      data: null,
-      isJson: false
-    };
-  }
+return {
+  ok: response.ok,
+  status: response.status,
+  url,
+  text,
+  data,
+  isJson
+};
+```
+
+} catch (error) {
+return {
+ok: false,
+status: 500,
+url,
+text: error.message,
+data: null,
+isJson: false
+};
+}
 }
 
 // ==============================
-// HANDLE DATA RESPONSE
+// DATA RESPONSE HANDLER
 // ==============================
-async function handleData(req, res, endpointName, tableDisplayName) {
-  const result = await fetchFromPostgrest(endpointName, 5000);
+async function handleData(req, res, tableName, tableDisplayName) {
+const limitRaw = req.query.limit || "5000";
+const limit = Math.min(Math.max(parseInt(limitRaw, 10) || 5000, 1), 10000);
 
-  if (!result.ok) {
-    return res.status(result.status).json({
-      ok: false,
-      table: tableDisplayName,
-      error: "Unable to fetch data from PostgREST",
-      called_url: result.url,
-      raw_text: result.text
-    });
-  }
+const result = await fetchFromPostgrest(tableName, limit);
 
-  if (!result.isJson) {
-    return res.status(500).json({
-      ok: false,
-      table: tableDisplayName,
-      error: "PostgREST did not return valid JSON",
-      called_url: result.url,
-      raw_text: result.text
-    });
-  }
+if (!result.ok) {
+return res.status(result.status).json({
+ok: false,
+table: tableDisplayName,
+error: "Unable to fetch data from PostgREST",
+called_url: result.url,
+raw_text: result.text
+});
+}
 
-  const rows = Array.isArray(result.data) ? result.data : [];
+if (!result.isJson) {
+return res.status(500).json({
+ok: false,
+table: tableDisplayName,
+error: "PostgREST did not return valid JSON",
+called_url: result.url,
+raw_text: result.text
+});
+}
 
-  return res.json({
-    ok: true,
-    table: tableDisplayName,
-    count: rows.length,
-    data: rows
-  });
+const rows = Array.isArray(result.data) ? result.data : [];
+
+return res.json({
+ok: true,
+table: tableDisplayName,
+count: rows.length,
+data: rows
+});
 }
 
 // ==============================
-// HEALTH / DEBUG
+// ROOT / HEALTH / DEBUG
 // ==============================
 app.get("/", (req, res) => {
-  res.json({
-    ok: true,
-    service: "nodejs-secure-postgrest-viewer",
-    message: "Node.js server is running",
-    postgrest_configured: hasPostgrestUrl(),
-    endpoints: {
-      health: "/health",
-      debug: "/api/debug",
-      a2: "/api/a2",
-      lenh_quyetdinh: "/api/lenh-quyetdinh",
-      raw_a2: "/api/raw/a2",
-      raw_lenh_quyetdinh: "/api/raw/lenh-quyetdinh"
-    }
-  });
+res.json({
+ok: true,
+service: "a2-viewer-api",
+message: "Node.js API is running",
+postgrest_configured: hasPostgrestUrl(),
+frontend_url: FRONTEND_URL || null,
+endpoints: {
+health: "/health",
+debug: "/api/debug",
+a2: "/api/a2",
+raw_a2: "/api/raw/a2"
+}
+});
 });
 
 app.get("/health", (req, res) => {
-  res.json({
-    ok: true,
-    service: "nodejs-secure-postgrest-viewer",
-    message: "This is Node.js server"
-  });
+res.json({
+ok: true,
+service: "a2-viewer-api",
+message: "This is Node.js API server"
+});
 });
 
 app.get("/api/debug", (req, res) => {
-  res.json({
-    ok: true,
-    service: "nodejs-secure-postgrest-viewer",
-    postgrest_configured: hasPostgrestUrl(),
-    postgrest_url_preview: POSTGREST_URL
-      ? POSTGREST_URL.replace(/^https?:\/\//, "").slice(0, 45) + "..."
-      : null,
-    endpoints: {
-      a2: "/api/a2",
-      lenh_quyetdinh: "/api/lenh-quyetdinh",
-      raw_a2: "/api/raw/a2",
-      raw_lenh_quyetdinh: "/api/raw/lenh-quyetdinh"
-    }
-  });
+res.json({
+ok: true,
+service: "a2-viewer-api",
+postgrest_configured: hasPostgrestUrl(),
+postgrest_url_preview: POSTGREST_URL
+? POSTGREST_URL.replace(/^https?:///, "").slice(0, 60) + "..."
+: null,
+table_a2: TABLE_A2,
+frontend_url: FRONTEND_URL || null,
+allowed_origins: allowedOrigins,
+endpoints: {
+a2: "/api/a2",
+raw_a2: "/api/raw/a2"
+}
+});
 });
 
 // ==============================
-// RAW DEBUG ENDPOINTS
+// API READ ONLY
 // ==============================
-
-// Debug bảng _A2
 app.get("/api/raw/a2", requirePostgrestUrl, async (req, res) => {
-  const result = await fetchFromPostgrest("_A2", 5);
+const result = await fetchFromPostgrest(TABLE_A2, 5);
 
-  res.json({
-    ok: result.ok,
-    status: result.status,
-    table: "_A2",
-    called_url: result.url,
-    is_json: result.isJson,
-    raw_text: result.text,
-    data: result.data
-  });
+res.json({
+ok: result.ok,
+status: result.status,
+table: TABLE_A2,
+called_url: result.url,
+is_json: result.isJson,
+raw_text: result.text,
+data: result.data
+});
 });
 
-// Debug bảng lenh_quyetdinh
-app.get("/api/raw/lenh-quyetdinh", requirePostgrestUrl, async (req, res) => {
-  const result = await fetchFromPostgrest("lenh_quyetdinh", 5);
-
-  res.json({
-    ok: result.ok,
-    status: result.status,
-    table: "lenh_quyetdinh",
-    called_url: result.url,
-    is_json: result.isJson,
-    raw_text: result.text,
-    data: result.data
-  });
-});
-
-// ==============================
-// MAIN READ-ONLY API
-// ==============================
-
-// Lấy dữ liệu bảng _A2
 app.get("/api/a2", requirePostgrestUrl, async (req, res) => {
-  await handleData(req, res, "_A2", "_A2");
-});
-
-// Lấy dữ liệu bảng lenh_quyetdinh
-app.get("/api/lenh-quyetdinh", requirePostgrestUrl, async (req, res) => {
-  await handleData(req, res, "lenh_quyetdinh", "lenh_quyetdinh");
+await handleData(req, res, TABLE_A2, TABLE_A2);
 });
 
 // ==============================
 // BLOCK WRITE METHODS
 // ==============================
 app.post("/api/*", (req, res) => {
-  res.status(405).json({
-    ok: false,
-    error: "Read only API. POST is not allowed."
-  });
+res.status(405).json({
+ok: false,
+error: "Read only API. POST is not allowed."
+});
 });
 
 app.put("/api/*", (req, res) => {
-  res.status(405).json({
-    ok: false,
-    error: "Read only API. PUT is not allowed."
-  });
+res.status(405).json({
+ok: false,
+error: "Read only API. PUT is not allowed."
+});
 });
 
 app.patch("/api/*", (req, res) => {
-  res.status(405).json({
-    ok: false,
-    error: "Read only API. PATCH is not allowed."
-  });
+res.status(405).json({
+ok: false,
+error: "Read only API. PATCH is not allowed."
+});
 });
 
 app.delete("/api/*", (req, res) => {
-  res.status(405).json({
-    ok: false,
-    error: "Read only API. DELETE is not allowed."
-  });
+res.status(405).json({
+ok: false,
+error: "Read only API. DELETE is not allowed."
 });
-
-// ==============================
-// SERVE HTML IF EXISTS
-// ==============================
-app.use(express.static(path.join(__dirname, "public")));
-
-app.get("/view", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 // ==============================
 // 404 HANDLER
 // ==============================
 app.use((req, res) => {
-  res.status(404).json({
-    ok: false,
-    error: "Not found",
-    path: req.path,
-    available_endpoints: [
-      "/",
-      "/health",
-      "/api/debug",
-      "/api/raw/a2",
-      "/api/raw/lenh-quyetdinh",
-      "/api/a2",
-      "/api/lenh-quyetdinh",
-      "/view"
-    ]
-  });
+res.status(404).json({
+ok: false,
+error: "Not found",
+path: req.path,
+available_endpoints: [
+"/",
+"/health",
+"/api/debug",
+"/api/raw/a2",
+"/api/a2"
+]
+});
 });
 
 // ==============================
 // START SERVER
 // ==============================
 app.listen(PORT, () => {
-  console.log(`Node.js server running on port ${PORT}`);
+console.log(`A2 Viewer API running on port ${PORT}`);
 });
